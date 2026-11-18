@@ -2,22 +2,19 @@
 yaml_version: 1
 
 project:
-  title: "My FPSAT entry"
-  author: "Your name"
-  description: "One line about the solver."
+  title: "PigWeedSAT"
+  author: "Christian Scaff"
+  description: "SAT-Accel's CDCL solver in Amaranth for the ECP5, with an in-hardware clause loader."
   language: amaranth          # amaranth | verilog
   clock_hz: 50000000          # your design clock, in Hz
-  # include_dirs: []          # Verilog only: relative include directories
 
   disclosure:
-    method: hand              # hand | ai-assisted | agent-generated
-    # models: []              # required unless method is "hand"
-    # harness: ""             # required if method is "agent-generated"
-
-  # methods_paper: docs/paper.pdf   # optional: enters the Methods Award
+    method: agent-generated   # hand | ai-assisted | agent-generated
+    models: ["claude-opus-5-5"]
+    harness: "Claude Code"
 
 username:
-  # top_module: Entry         # only needed if more than one module matches
   sourcefiles:
     - design.py
     - solver.py
+    - pigweed_core.py

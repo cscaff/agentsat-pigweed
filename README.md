@@ -1,67 +1,37 @@
-# AgentSAT entry template (Amaranth)
+# PigWeedSAT for AgentSAT
 
-A starting point for an entry to AgentSAT, the Field Programmable Satisfiability Competition: a SAT solver that runs entirely in the fabric of a Lattice ECP5-85F. This template gives you the interface the competition runner expects. You write the solver.
+An AgentSAT entry: [PigWeedSAT](https://github.com/cscaff/PigWeedSAT), an Amaranth port of the SAT-Accel CDCL
+solver (Lo, Chang & Cong, FPGA '25) to the Lattice ECP5-85F, behind the competition's register map (v1).
 
-It is a skeleton, not a working entry. As shipped, the solver gives up on every instance, and it declares a capacity of zero, so the runner skips every non-empty instance. Nothing you submit unchanged will score.
+## How it is put together
 
-## What is here
+| File | What it is |
+|---|---|
+| `design.py` | The template's register-map shell, unchanged. |
+| `solver.py` | The template's `Solver` interface around PigWeedSAT, with an in-hardware loader (below). |
+| `pigweed_core.py` | PigWeedSAT's `design.py` (commit `679c136`). One change: `SATAccel` takes its host link as a parameter instead of owning a Wishbone register file, so `design.py`'s `Entry` is the only Wishbone slave. The solver, its kernels and its memories are unchanged. |
 
-| File | What it is | Edit? |
-|---|---|---|
-| `solver.py` | Your solver. The interface it must follow is described at the top of the file. | **Yes** |
-| `design.py` | The competition register map (version 1), connected to `solver.py`. | No |
-| `info.yaml` | Describes your entry: language, clock, source files, method disclosure. | **Yes** |
-| `tests/` | Smoke tests for the register map and the solver interface. | Add your own |
+PigWeedSAT's original host prepared its memories in Python. Under the register map an entry gets only the
+clause stream, so `solver.py` builds the same structures in hardware as the clauses arrive: the paged clause
+store, the per-clause records, each literal's chain of occurrence pages (allocated as literals arrive, the way
+the solver appends learned clauses), and the initial trail (unit clauses, and variables in no clause). A literal
+repeated within a clause is dropped; an empty clause makes the instance UNSAT at once. An instance that does not
+fit the stores is REJECTED at start (unsolved, not wrong). After SAT the trail is copied into a per-variable
+model RAM that `MODEL_DATA` reads.
 
-You may add more source files. Import them from `solver.py` and list them under `sourcefiles` in `info.yaml`.
+Solver settings are PigWeedSAT's recommended ones (`satlat.host.pigweed()`), with 16-word literal pages.
 
-## Quick start
+Capacity: 2,048 variables, 8,192 clauses (original plus learned), 12,288 literals. The clause and literal
+stores are 16K words each (PigWeedSAT's are 24K): the platform's SoC takes about 53 of the 208 block RAMs,
+and at 24K the build needs 233. With 16K stores the whole build uses about 193.
 
-```sh
-pip install amaranth pytest      # tested with Amaranth 0.5.8
-pytest                           # runs the register-map smoke tests
-```
+## Testing
 
-Then:
+`pytest` runs the template's register-map tests. The entry was also run in RTL simulation behind the
+competition's own runner and pre-flight (FPSAT `backend/fpsat/rtlsim.py`): edge cases, random formulas checked
+against brute force, and the smallest public benchmark instances.
 
-1. Fill in `info.yaml`: your title, author, clock, and the method disclosure.
-2. Implement `Solver` in `solver.py`. Read the interface notes at the top of that file.
-3. Set `max_vars`, `max_clauses` and `max_lits` in `Solver` to the largest instance you can hold. The runner skips anything larger and counts it as unsolved. Do not declare more than you can hold, because a wrong answer is worse than a skip.
-4. Test your solver. Add your own tests next to `tests/test_register_map.py`. The `FakeSolver` there shows how to drive the shell.
+## Credits and licenses
 
-## How the pieces fit
-
-The runner talks to your design through a fixed register map: it writes the instance size, streams the clauses in, writes `START`, and polls `STATUS` until your design reports SAT, UNSAT, or the time limit passes. It reads any satisfying assignment back one literal at a time, and checks it against the original clauses. `design.py` handles all of that. Your `Solver` sees a small interface instead: a start pulse, the instance size, a stream of clause words, and an abort level. It gives back done, rejected, a result, and the model one variable at a time.
-
-The full register map, including `abort`, is in [`docs/register_map_v1.md`](docs/register_map_v1.md). The rules are on the competition site's Rules page, and the platform docs are at https://docs.manhattanreasoning.com.
-
-## Things to know
-
-- **Abort must work.** The runner aborts a solve when the time limit passes. While `abort` is high you must drop all instance state, and then raise `idle`. The next instance must solve exactly as it would on a freshly programmed board.
-- **One bitstream solves every instance.** There is no reconfiguration between instances.
-- **Your clock.** `clock_hz` in `info.yaml` is the frequency of the `sync` domain. The SoC generates it with a PLL. The PLL can land up to about 1% from your request, and time is measured on the clock that results.
-- **Memory initialization files are not supported in v1.** Do not read data files at build time (for example Verilog `$readmemh`). Put initial values in the source, for example `Memory(init=[...])`.
-- **Resources.** An entry has 78,292 LUTs, 80,922 FFs, 183 block RAMs, 152 DSPs and 3 PLLs left after the SoC. The register-map shell in `design.py` uses roughly 70 LUTs and 100 FFs.
-- **Only one top module.** The platform finds your design as the one class in `design.py` that has the Wishbone signals. Keep `Entry` as the only such class in that file.
-- **Build time limit.** A build must finish within 60 minutes.
-
-## Before you submit
-
-1. Run `pytest` and your own tests.
-2. Fill in the method disclosure in `info.yaml`. It is required.
-3. Push your solver to your team's registered, public GitHub repository, with `info.yaml` at its root.
-4. Submit by pushing a tag that starts with `submission-`:
-
-   ```sh
-   git tag submission-1
-   git push origin submission-1
-   ```
-
-   We build the exact commit the tag points to. A tag is read once, so moving it later does nothing; push a new tag instead. Your team gets one entry per UTC day.
-5. We then run a pre-flight check in the evaluation image: build, timing, fit, register-map conformance, abort and correct answers.
-
-Your repository must be public at submission, and your results and bitstream are published.
-
-## Methods Award
-
-If your entry was built with AI assistance, you may also submit a methods paper of at most 10 pages. List it under `methods_paper` in `info.yaml`. The paper must accompany a valid final entry. See the rules for the rubric.
+PigWeedSAT is Apache 2.0 (`LICENSE.PigWeedSAT`, `NOTICE`); it reimplements SAT-Accel (Lo, Chang & Cong, FPGA
+'25). The register-map shell and template are from the AgentSAT entry template (`LICENSE`, MIT).

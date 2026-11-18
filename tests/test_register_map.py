@@ -279,21 +279,3 @@ def test_writes_ignored_while_busy():
         assert await wb(ctx, dut, R_STATUS) == BUSY  # still the never-finishing run
 
     run_sim(dut, body)
-
-
-def test_placeholder_gives_up_and_rejects_everything_nonempty():
-    dut = Entry()  # the real placeholder Solver, capacity 0
-
-    async def body(ctx):
-        assert await wb(ctx, dut, R_MAX_VARS) == Solver.max_vars == 0
-        await load(ctx, dut, 3, 2, 4, [])
-        await wb(ctx, dut, R_CTRL, True, START)
-        assert await wb(ctx, dut, R_STATUS) == REJECTED
-        await wb(ctx, dut, R_CTRL, True, ABORT)
-        await wait_status(ctx, dut, BUSY | DONE | REJECTED, 0)
-        await load(ctx, dut, 0, 0, 0, [])  # an empty instance fits
-        await wb(ctx, dut, R_CTRL, True, START)
-        await wait_status(ctx, dut, DONE, DONE)
-        assert await wb(ctx, dut, R_RESULT) == 0  # unknown
-
-    run_sim(dut, body)
